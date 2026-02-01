@@ -2,7 +2,7 @@
 This is a Python conversion of the awk code to generate sequence scripts for Sharpcap
 
 ## How to run
-python script_generation.py [event file] [**--day** day of observation] [**--pre** header file] [**--post** footer file] [**--out** output path]
+python script_generation.py [event file] [telescope] [**--day** day of observation] [**--pre** header file] [**--post** footer file] [**--out** output path]
 
 This works with command prompt and linux terminals.
 
@@ -10,6 +10,10 @@ This works with command prompt and linux terminals.
 **event file**
 
 This is the YYYYMMDD_events.txt file which contains the raw events list. If in another folder, enter the path to it .../YYYYMMDD_events.txt
+
+**telescope**
+
+This is the telescope system you are generating the script for. Current options are: c11, c14, hubble24 
 
 **day**
 
@@ -27,6 +31,8 @@ Optional. This is the footer file that contains the end of observing sequence. D
 
 Optional. Can use -o or --out. This sets the path for the output scs file. Default will save as YYYYMMDD_174_script.scs and will save in the same location as the program. To set a different path, enter .../YYYYMMDD_174_script.scs
 
+# Notes
+Need to update c11 and hubble24 with appropriate event selection conditions
 
 
 
