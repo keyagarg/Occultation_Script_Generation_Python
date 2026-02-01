@@ -60,7 +60,6 @@ TELESCOPE_SELECTORS = {
     "hubble24": hubble24
 }
 
-
 def exposure_for_mag(mag: float) -> float:
     inttime = 0.0067
     if mag > 9.0:  inttime = 0.015
@@ -255,7 +254,7 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
     print('\033[1m' + 'POTENTIAL CONFLICTS' + '\033[0m')
     for i in flagged_events:
         for j in i:
-            print("Asteroid:", j.target,"  Event time:", j.time, "  Mag:", j.mag_token, "  Dur:", j.dur_token, "  Prob:", j.prob)
+            print("Asteroid:", j.target,"  Event time:", j.time, "  Mag:", j.mag_token, "  Dur:", j.dur_token, "  Prob:", j.prob, " AltAz:", j.altaz)
         print()
 
     events_to_remove = input("Enter the asteriod number of the events to remove, separated by a comma. If none to remove, enter 0: ").strip()
@@ -277,7 +276,6 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
     star = 1
     laststime = -10.0
     for ev in events:
-
         out += handle_print("#Start hours ", ev.stime, " previous: ", laststime)
         out += handle_print("# *************** Occultation", star, "************")
         out += handle_print("#")
