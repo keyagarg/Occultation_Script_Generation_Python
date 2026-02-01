@@ -33,7 +33,7 @@ Optional. Can use -o or --out. This sets the path for the output scs file. Defau
 
 # Notes
 - Need to update c11 and hubble24 with appropriate event selection conditions
-- Need to handle date change errors from SharpCap
+- Need to handle UTC date change errors from SharpCap
 
 
 
