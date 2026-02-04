@@ -234,6 +234,14 @@ def infer_day_from_filename(path: str) -> int | None:
     m = re.search(r"(\d{4})(\d{2})(\d{2})", Path(path).name)
     return int(m.group(3)) if m else None
 
+def get_astrometry_string(radec: str) -> str:
+    parts = radec.split()
+    ra_h, ra_m, ra_s, dec_d, dec_m, dec_s = parts[:6]
+    sign = "-" if dec_d.startswith("-") else "+"
+    dec_d_abs = dec_d.lstrip("+-")
+    return f"#Astrometry coordinates: {ra_h}h{ra_m}m{ra_s}s {sign}{dec_d_abs}d{dec_m}m{dec_s}s\n"
+
+
 def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str, pre_path: str, post_path: str, telescope: str) -> None:
     with open(pre_path, "r", encoding="utf-8", errors="replace", newline="") as f:
         header = f.read()
@@ -290,6 +298,8 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
             "RA/DEC", ev.radec,
             "star=", ev.occulted_star
         )
+        out += get_astrometry_string(ev.radec)
+
         out += handle_print("TARGETNAME \"", ev.target, "\"")
         out += handle_print("UNLOCK CONTROLS")
         out += handle_print("MOUNT TRACKING None")
