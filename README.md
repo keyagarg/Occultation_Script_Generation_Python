@@ -32,7 +32,8 @@ Optional. This is the footer file that contains the end of observing sequence. D
 Optional. Can use -o or --out. This sets the path for the output scs file. Default will save as YYYYMMDD_174_script.scs and will save in the same location as the program. To set a different path, enter .../YYYYMMDD_174_script.scs
 
 # Notes
-Need to update c11 and hubble24 with appropriate event selection conditions
+- Need to update c11 and hubble24 with appropriate event selection conditions
+- Need to handle UTC date change errors from SharpCap
 
 
 
