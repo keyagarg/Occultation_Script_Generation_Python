@@ -3,62 +3,39 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import pandas as pd
 import argparse
 
 MONTH_NUM = {"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,
              "Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12}
+STAR_PREFIXES = {"UCAC4", "UCAC5", "TYC", "Gaia", "2MASS", "HIP", "GSC", "PPMXL"}
+EVENT_ROW = re.compile(r"^\s*\d{4}\s+[A-Za-z]{3}\s+\d{1,2}\b")
+PROB_TOK  = re.compile(r"^\d+%$")
+INT_TOK   = re.compile(r"^-?\d+$")
 
 def float_prefix(s: str) -> float:
     m = re.match(r"\s*([0-9]*\.?[0-9]+)", s)
-    return float(m.group(1)) if m else 0.0
+    return float(m.group(1)) if m else float("nan")
 
-def substr(line: str, start_1based: int, length: int) -> str:
-    line = line.rstrip("\n")
-    need = (start_1based - 1) + length
-    if len(line) < need:
-        line = line + " " * (need - len(line))
-    i = start_1based - 1
-    return line[i:i+length]
-
-
-def c11(raw_lines, day_of_observation):
-    events = []
-    for line in raw_lines:
-        ev = extract_event(line)
-        if ev and night_window(ev, day_of_observation):
-            # ADD MAG/DURATION CONDITIONS HERE #
+def filter_events_for_telescope(events, telescope_key: str, day_of_observation: int):
+    filtered = []
+    for ev in events:
+        if not night_window(ev, day_of_observation):
+            continue
+        if telescope_key == "c11":
+            # ADD MAG CONDITIONS HERE 
             if not ((ev.mag >= 15.0) and (ev.dur < 1.0)):
-                if not((ev.mag >= 14.5) and (ev.dur < 0.3)):
-                    events.append(ev)
-    return events
-
-def hubble24(raw_lines, day_of_observation):
-    events = []
-    for line in raw_lines:
-        ev = extract_event(line)
-        if ev and night_window(ev, day_of_observation):
-            # ADD MAG/DURATION CONDITIONS HERE #
-            if not ((ev.mag >= 15.0) and (ev.dur < 1.0)):
-                if not((ev.mag >= 14.5) and (ev.dur < 0.3)):
-                    events.append(ev)
-    return events
-
-def c14(raw_lines, day_of_observation):
-    events = []
-    for line in raw_lines:
-        ev = extract_event(line)
-        if ev and night_window(ev, day_of_observation):
-            # ADD MAG/DURATION CONDITIONS HERE #
-            if not ((ev.mag >= 15.0) and (ev.dur < 1.0)):
-                if not((ev.mag >= 14.5) and (ev.dur < 0.3)):
-                    events.append(ev)
-    return events
-
-TELESCOPE_SELECTORS = {
-    "c11": c11,
-    "c14": c14,
-    "hubble24": hubble24
-}
+                if not ((ev.mag >= 14.5) and (ev.dur < 0.3)):
+                    filtered.append(ev)
+        elif telescope_key == "c14":
+            # ADD MAG CONDITIONS HERE
+            if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
+                filtered.append(ev)
+        elif telescope_key == "hubble24":
+            # ADD MAG CONDITIONS HERE
+            if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
+                filtered.append(ev)
+    return filtered
 
 def exposure_for_mag(mag: float) -> float:
     inttime = 0.0067
@@ -98,6 +75,7 @@ class Event:
     dur_token: str
     mag: float
     mag_token: str
+    mag_drop: float
     radec: str
     altaz: str
     target: str
@@ -113,38 +91,165 @@ class Event:
     lshour: int
     lsmin: int
 
-def extract_radec_from_end(line: str) -> str:
-    t = line.split()
-    if t and re.fullmatch(r"\d+", t[-1]):
+def parse_radec_from_end(tokens):
+    t = tokens[:]
+    if t and t[-1].isdigit():
         t = t[:-1]
-    ra_h, ra_m, ra_s, dec_d, dec_m, dec_s = t[-6:]
-    return f"{ra_h} {ra_m} {ra_s} {dec_d} {dec_m} {dec_s}"
+    if len(t) >= 7 and t[-4] in ("-", "+"):
+        ra_h, ra_m, ra_s = t[-7], t[-6], t[-5]
+        dec_d = t[-4] + t[-3]      # "-3" or "+12"
+        dec_m, dec_s = t[-2], t[-1]
+        core = t[:-7]
+    else:
+        ra_h, ra_m, ra_s, dec_d, dec_m, dec_s = t[-6:]
+        core = t[:-6]
 
-EVENT_ROW = re.compile(r"^\s*\d{4}\s+[A-Za-z]{3}\s+\d{1,2}\b")
-def extract_event(line: str) -> Event | None:
+    ra  = f"{ra_h} {ra_m} {ra_s}"
+    dec = f"{dec_d} {dec_m} {dec_s}"
+    return core, ra, dec
+
+def find_altaz_index(tokens):
+    for i in range(len(tokens) - 3, -1, -1):
+        if INT_TOK.match(tokens[i]) and INT_TOK.match(tokens[i+1]):
+            alt = int(tokens[i]); az = int(tokens[i+1])
+            if -90 <= alt <= 90 and 0 <= az <= 360:
+                try:
+                    float(tokens[i+2])  # dist
+                    return i
+                except:
+                    pass
+    return None
+
+def find_probability(tokens):
+    for i in range(len(tokens) - 1, -1, -1):
+        if PROB_TOK.match(tokens[i]):
+            return float(tokens[i].rstrip("%"))
+    return float("nan")
+
+def find_star_anchor(tokens):
+    for i, tok in enumerate(tokens):
+        if tok in STAR_PREFIXES and i + 1 < len(tokens):
+            return f"{tok} {tokens[i+1]}", i + 2
+
+    for i, tok in enumerate(tokens):
+        if tok.startswith("J") and ("+" in tok or "-" in tok):
+            return tok, i + 1
+
+    return "", None
+
+def find_asteroid(tokens):
+    alt_i = find_altaz_index(tokens)
+    if alt_i is None:
+        return ""
+
+    star_no, j = find_star_anchor(tokens)
+    if j is None:
+        return ""
+    while j < len(tokens) and len(tokens[j]) == 1 and tokens[j].isalpha():
+        j += 1
+
+    if j + 1 >= alt_i:
+        return ""
+
+    start = j + 1
+    return " ".join(tokens[start:alt_i]).strip()
+
+def parse_event_line(line: str):
     if not EVENT_ROW.match(line):
         return None
-    p = line.split()
 
-    year = int(p[0])
-    month = p[1]
-    day = int(p[2])
+    tokens = line.split()
+    core, ra, dec = parse_radec_from_end(tokens)
+    year  = int(core[0]); month = core[1]; day = int(core[2])
+    hour  = int(core[3]); minute_float = float(core[4])
+
+    date = f"{year} {month} {day:02d}"
+    ut = f"{hour} {minute_float:g}"
+
+    durn_token = core[7]
+    durn = float_prefix(durn_token)   # seconds
+    star_mag = float(core[9])
+    mag_drop = float_prefix(core[10])
+
+    star_no, _ = find_star_anchor(core)
+    asteroid = find_asteroid(core)
+
+    alt_i = find_altaz_index(core)
+    alt = int(core[alt_i]) if alt_i is not None else None
+    az  = int(core[alt_i + 1]) if alt_i is not None else None
+
+    probability = find_probability(core)
+
+    return {
+        "date": date,
+        "ut": ut,
+        "durn": durn,
+        "star_mag": star_mag,
+        "mag_drop": mag_drop,
+        "star_no": star_no,
+        "asteroid": asteroid,
+        "alt": alt,
+        "az": az,
+        "probability": probability,
+        "ra": ra,
+        "dec": dec,
+    }
+
+def events_to_dataframe(path: str) -> pd.DataFrame:
+    rows = []
+    bad = []
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for ln_no, line in enumerate(f, 1):
+            line = line.strip("\n")
+            if not line.strip():
+                continue
+            try:
+                d = parse_event_line(line)
+                if d:
+                    rows.append(d)
+            except Exception as e:
+                if len(bad) < 10:
+                    bad.append((ln_no, str(e), line))
+
+    df = pd.DataFrame(rows)
+    cols = ["date","ut","durn","star_mag","mag_drop","star_no",
+            "asteroid","alt","az","probability","ra","dec"]
+    return df[cols]
+
+def parse_date_str(date_str: str):
+    y_str, mon, d_str = date_str.split()
+    return int(y_str), mon, int(d_str)
+
+def parse_ut_str(ut_str: str):
+    h_str, m_str = ut_str.split()
+    return int(h_str), float(m_str)
+
+def extract_event(row) -> Event | None:
+    year, month, day = parse_date_str(row["date"])
     date_str = f"{year} {month} {day:02d}"
-    hour = int(p[3])
-    minute_float = float(p[4])
+    hour, minute_float = parse_ut_str(row["ut"])
     min_int = int(minute_float)
     sec = int((minute_float - min_int) * 60)
     time = f"{hour:02d}:{min_int:02d}:{sec:02d}"
-    dur_token = p[7]
-    dur = float_prefix(dur_token)
-    mag_token = p[8]
-    mag = float(mag_token)
-    radec = extract_radec_from_end(line)
-    altaz = substr(line, 122, 6)
-    target = substr(line, 97, 24)
-    occulted_star = substr(line, 64, 19)
-    prob_str = substr(line, 146, 4)
-    asteroid_id = target.split()[0]
+    durn_val = row["durn"]
+    if isinstance(durn_val, str):
+        dur_token = durn_val
+        dur = float_prefix(durn_val)
+    else:
+        dur = float(durn_val)
+        dur_token = f"{dur:g}s"
+
+    mag = float(row["star_mag"])
+    mag_token = f"{mag:g}"
+    mag_drop = float(row["mag_drop"])
+    radec = f'{row["ra"]} {row["dec"]}'
+    alt = int(row["alt"]) if pd.notna(row["alt"]) else 0
+    az  = int(row["az"])  if pd.notna(row["az"]) else 0
+    altaz = f"{alt:>3} {az:>3}"
+    target = str(row["asteroid"]) if pd.notna(row["asteroid"]) else ""
+    asteroid_id = target.split()[0] if target else ""
+    occulted_star = str(row["star_no"])
+    prob = float(row["probability"])
     date_object = datetime(year, MONTH_NUM[month], day, hour, min_int, sec)
 
     maxint = dur / 4.0
@@ -187,14 +292,10 @@ def extract_event(line: str) -> Event | None:
 
     nsamp = int(60 / inttime) if inttime > 0 else 0
 
-    radec = radec.replace("- ", "-0")
-    target = target.replace("  ", "")
-    prob = float_prefix(prob_str)
-
     return Event(
         asteroid_id=asteroid_id, year=year, month=month, day=day, date_str=date_str,
         hour=hour, minute_float=minute_float, min_int=min_int, sec=sec, time=time, date_object=date_object,
-        dur=dur, mag=mag, dur_token=dur_token, mag_token=mag_token,
+        dur=dur, mag=mag, dur_token=dur_token, mag_token=mag_token, mag_drop=mag_drop,
         radec=radec, altaz=altaz, target=target,
         occulted_star=occulted_star, prob=prob,
         maxint=maxint, inttime=inttime, nsamp=nsamp,
@@ -203,7 +304,7 @@ def extract_event(line: str) -> Event | None:
     )
 
 def night_window(ev: Event, day_filter: int) -> bool:
-    return ((ev.day == day_filter and ev.hour < 16) or (ev.day == day_filter - 1 and ev.hour > 16))
+    return (ev.day == day_filter and ev.hour < 16) or (ev.day == day_filter - 1 and ev.hour > 16)
 
 def handle_num(x) -> str:
     if isinstance(x, int):
@@ -241,7 +342,6 @@ def get_astrometry_string(radec: str) -> str:
     dec_d_abs = dec_d.lstrip("+-")
     return f"#Astrometry coordinates: {ra_h}h{ra_m}m{ra_s}s {sign}{dec_d_abs}d{dec_m}m{dec_s}s\n"
 
-
 def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str, pre_path: str, post_path: str, telescope: str) -> None:
     with open(pre_path, "r", encoding="utf-8", errors="replace", newline="") as f:
         header = f.read()
@@ -250,12 +350,11 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
     with open(post_path, "r", encoding="utf-8", errors="replace", newline="") as f:
         footer = f.read()
 
-    with open(events_txt_path, "r", encoding="utf-8", errors="replace") as f:
-        raw_lines = [ln.rstrip("\n") for ln in f]
-    raw_lines = list(filter(None, raw_lines))
-
     telescope_key = telescope.strip().lower()
-    events = TELESCOPE_SELECTORS[telescope_key](raw_lines, day_of_observation)
+    df = events_to_dataframe(events_txt_path)
+
+    events_unfiltered = [extract_event(r) for _, r in df.iterrows()]
+    events = filter_events_for_telescope(events_unfiltered, telescope_key, day_of_observation)
     events.sort(key=lambda e: e.date_object)
 
     flagged_events = get_flagged_events(events)
@@ -278,8 +377,6 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
         print(f"Removed {prev_len - new_len} events.")
     else:
         print("No events removed.")
-
-
     out = header
     star = 1
     laststime = -10.0
@@ -296,10 +393,10 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
             "prob=", ev.prob,
             "Target=", ev.target,
             "RA/DEC", ev.radec,
-            "star=", ev.occulted_star
+            "star=", ev.occulted_star,
+            "MagDrop=", ev.mag_drop
         )
         out += get_astrometry_string(ev.radec)
-
         out += handle_print("TARGETNAME \"", ev.target, "\"")
         out += handle_print("UNLOCK CONTROLS")
         out += handle_print("MOUNT TRACKING None")
@@ -332,7 +429,6 @@ def generate_scs(events_txt_path: str, day_of_observation: int, output_path: str
 
         star += 1
         laststime = ev.lshour + (ev.lsmin + 5) / 60.0
-
     out += footer
 
     with open(output_path, "w", encoding="utf-8", newline="") as f:
@@ -349,7 +445,6 @@ def main() -> None:
     ap.add_argument("-o", "--out", default=None, help="Output .scs path (default: YYYYMMDD_174_script.scs)")
 
     args = ap.parse_args()
-
     day_of_observation = args.day if args.day is not None else infer_day_from_filename(args.events_txt)
 
     if args.out is None:
@@ -364,6 +459,5 @@ if __name__ == "__main__":
     main()
 
 # %%
-
 
 
