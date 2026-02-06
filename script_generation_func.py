@@ -188,8 +188,8 @@ def parse_event_line(line: str):
 
     durn_token = core[7]
     durn = float_prefix(durn_token)   # seconds
-    star_mag = float(core[8])
-    mag_drop = float_prefix(core[9])
+    star_mag = float(core[9])
+    mag_drop = float_prefix(core[10]) #CHANGE HERE FOR CONFLICT OF ADDITIONAL COLUMNS FROM OCCULT 4
 
     star_no, _ = find_star_anchor(core)
     asteroid = find_asteroid(core)
