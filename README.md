@@ -5,7 +5,7 @@ This is a Python conversion of the awk code to generate sequence scripts for Sha
 ## How to run
 python script_generation_GUI.py
 
-This works with command prompt and linux terminals.
+This works with command prompt and linux terminals. You will need script_generation_GUI.py and script_generation_func.py in the same folder. 
 
 ## Navigation
 Upload raw events.txt file by clicking on the Upload events.txt button in the top left corner. This file **must** be named according to YYYYMMDD_events.txt as it infers the day from the file name. 
