@@ -1,8 +1,22 @@
 # UVA Occultation Script Generation with Python
 This is a Python conversion of the awk code to generate sequence scripts for Sharpcap
 
+# GUI Interface
 ## How to run
-python script_generation.py [event file] [telescope] [**--day** day of observation] [**--pre** header file] [**--post** footer file] [**--out** output path]
+python script_generation_GUI.py
+
+This works with command prompt and linux terminals.
+
+## Navigation
+Upload raw events.txt file by clicking on the Upload events.txt button in the top left corner. This file **must** be named according to YYYYMMDD_events.txt as it infers the day from the file name. 
+
+Click on an event and click Move to Accepted/Rejected to move them around. Events in green are prob > 15% and yellow are events that are within 4 minutes of each other. 
+
+Finally click on Generate SCS from Accepted in the bottom right corner to create a script. 
+
+# CLI Interface
+## How to run
+python script_generation_CLI.py [event file] [telescope] [**--day** day of observation] [**--pre** header file] [**--post** footer file] [**--out** output path]
 
 This works with command prompt and linux terminals.
 
