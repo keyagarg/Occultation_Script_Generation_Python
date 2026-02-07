@@ -37,25 +37,25 @@ def float_prefix(s: str) -> float:
     m = re.match(r"\s*([0-9]*\.?[0-9]+)", s)
     return float(m.group(1)) if m else float("nan")
 
-def filter_events_for_telescope(events, telescope_key: str, day_of_observation: int):
-    filtered = []
-    for ev in events:
-        if not night_window(ev, day_of_observation):
-            continue
-        if telescope_key == "c11":
-            # ADD MAG CONDITIONS HERE
-            if not ((ev.mag >= 15.0) and (ev.dur < 1.0)):
-                if not ((ev.mag >= 14.5) and (ev.dur < 0.3)):
-                    filtered.append(ev)
-        elif telescope_key == "c14":
-            # ADD MAG CONDITIONS HERE
-            if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
-                filtered.append(ev)
-        elif telescope_key == "hubble24":
-            # ADD MAG CONDITIONS HERE
-            if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
-                filtered.append(ev)
-    return filtered
+# def filter_events_for_telescope(events, telescope_key: str, day_of_observation: int):
+#     filtered = []
+#     for ev in events:
+#         if not night_window(ev, day_of_observation):
+#             continue
+#         if telescope_key == "c11":
+#             # ADD MAG CONDITIONS HERE
+#             if not ((ev.mag >= 15.0) and (ev.dur < 1.0)):
+#                 if not ((ev.mag >= 14.5) and (ev.dur < 0.3)):
+#                     filtered.append(ev)
+#         elif telescope_key == "c14":
+#             # ADD MAG CONDITIONS HERE
+#             if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
+#                 filtered.append(ev)
+#         elif telescope_key == "hubble24":
+#             # ADD MAG CONDITIONS HERE
+#             if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
+#                 filtered.append(ev)
+#     return filtered
 
 def exposure_for_mag(mag: float) -> float:
     inttime = 0.0067
@@ -188,8 +188,8 @@ def parse_event_line(line: str):
 
     durn_token = core[7]
     durn = float_prefix(durn_token)   # seconds
-    star_mag = float(core[9])
-    mag_drop = float_prefix(core[10]) #CHANGE HERE FOR CONFLICT OF ADDITIONAL COLUMNS FROM OCCULT 4
+    star_mag = float(core[8])
+    mag_drop = float_prefix(core[9]) #CHANGE HERE FOR CONFLICT OF ADDITIONAL COLUMNS FROM OCCULT 4
 
     star_no, _ = find_star_anchor(core)
     asteroid = find_asteroid(core)
@@ -332,8 +332,10 @@ def extract_event(row) -> Event | None:
         lshour=lshour, lsmin=lsmin
     )
 
-def night_window(ev: Event, day_filter: int) -> bool:
-    return (ev.day == day_filter and ev.hour < 16) or (ev.day == day_filter - 1 and ev.hour > 16)
+def night_window_filter(df: pd.DataFrame, day_filter: int) -> pd.Series:
+    dt = df["utc_dt"]
+    return ((dt.dt.day == day_filter) & (dt.dt.hour < 16)) | ((dt.dt.day == day_filter - 1) & (dt.dt.hour > 16))
+
 
 def handle_num(x) -> str:
     if isinstance(x, int):

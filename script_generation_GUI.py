@@ -44,10 +44,13 @@ class DualTableApp(tk.Tk):
         self.title("Occultation Script GUI")
         self.geometry(f"{screen_width}x{screen_height}")
 
+        self.events_fullpath = ""
         self.events_path = tk.StringVar()
         self.pre_path = tk.StringVar(value="pre174.txt")
         self.post_path = tk.StringVar(value="post571.txt")
         self.out_path = tk.StringVar()
+        self.day_var = tk.IntVar(value=1)
+        self.day_text = tk.StringVar(value="Day: —")
 
         self.telescope = tk.StringVar(value="c14")
 
@@ -63,7 +66,8 @@ class DualTableApp(tk.Tk):
         top.pack(fill="x", padx=10, pady=8)
 
         ttk.Button(top, text="Upload events.txt", command=self.pick_events).grid(row=0, column=0, padx=6)
-        ttk.Label(top, textvariable=self.events_path, width=70).grid(row=0, column=1, sticky="w")
+        ttk.Label(top, textvariable=self.events_path, width=50).grid(row=0, column=1, sticky="w")
+        ttk.Label(top, textvariable=self.day_text, width=15).grid(row=0, column=2, sticky="w", padx=6)
 
         ttk.Label(top, text="pre path:").grid(row=1, column=0, sticky="e")
         ttk.Entry(top, textvariable=self.pre_path, width=40).grid(row=1, column=1, sticky="we", padx=(8, 2))
@@ -135,7 +139,15 @@ class DualTableApp(tk.Tk):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if not p:
             return
-        self.events_path.set(p)
+        self.events_fullpath = p
+        self.events_path.set(Path(p).name)
+        d = script_generation_func.infer_day_from_filename(p)
+        self.day_var.set(d)
+        self.day_text.set(f"Day: {d:02d}")
+        if d is None:
+            messagebox.showerror("Bad filename", "Expected filename like YYYYMMDD_events.txt")
+            return
+        self.day_var.set(d)
 
         # automatic path name
         stem = Path(p).name[:8]
@@ -159,7 +171,7 @@ class DualTableApp(tk.Tk):
             self.out_path.set(p)
 
     def load_events_into_tables(self):
-        path = self.events_path.get().strip()
+        path = self.events_fullpath
         if not path:
             return
 
@@ -178,6 +190,8 @@ class DualTableApp(tk.Tk):
         df["altaz"] = df.apply(lambda r: f"{int(r['alt']):>3} {int(r['az']):>3}" if pd.notna(r["alt"]) and pd.notna(r["az"]) else "", axis=1)
         df["utc_dt"] = pd.to_datetime(df["utc_dt"], errors="coerce")
         df["ut_str"] = df["utc_dt"].dt.strftime("%H:%M:%S")
+        day_filter = int(self.day_var.get())
+        df = df[script_generation_func.night_window_filter(df, day_filter)].copy()
         df["_uid"] = range(len(df))
         df["accepted"] = script_generation_func.telescope_accept_mask(df, self.telescope.get())
 
@@ -259,7 +273,10 @@ class DualTableApp(tk.Tk):
             messagebox.showerror("No accepted events", "Accepted table is empty.")
             return
 
-        records = df_good[DISPLAY_COLS].to_dict("records")
+        NEEDED = ["date","ut","durn","star_mag","mag_drop","star_no",
+                  "asteroid","alt","az","probability","ra","dec"]
+
+        records = df_good[NEEDED].to_dict("records")
         try:
             events = [script_generation_func.extract_event(rec) for rec in records]  # <-- adapt event_from_row to accept dict
             script_generation_func.generate_scs(events, self.out_path.get(), self.pre_path.get(), self.post_path.get())
