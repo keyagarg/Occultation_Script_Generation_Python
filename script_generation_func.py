@@ -13,6 +13,7 @@ INT_TOK   = re.compile(r"^-?\d+$")
 
 def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
     mag = df["star_mag"].astype(float)
+    alt = df["alt"].astype(float)
 
     if df["durn"].dtype == object:
         dur = df["durn"].astype(str).str.rstrip("s").astype(float)
@@ -22,13 +23,13 @@ def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
     tel = telescope_key.lower().strip()
 
     if tel == "c11":
-        rejected = ((mag >= 15.0) & (dur < 1.0)) | ((mag >= 14.5) & (dur < 0.3)) #ADD MAG CONDITIONS HERE
+        rejected = ((mag >= 15.0) & (dur < 1.0)) | ((mag >= 14.5) & (dur < 0.3)) | (alt <= 10) #ADD RESTRICTING CONDITIONS HERE
         return ~rejected
     elif tel == "c14":
-        rejected = ((mag >= 15.5) & (dur < 1.0)) #ADD MAG CONDITIONS HERE
+        rejected = ((mag >= 15.5) & (dur < 1.0)) | (alt <= 10) #ADD RESTRICTING  CONDITIONS HERE
         return ~rejected
     elif tel == "hubble24":
-        rejected = ((mag >= 16.0) & (dur < 1.0)) #ADD MAG CONDITIONS HERE
+        rejected = ((mag >= 16.0) & (dur < 1.0)) | (alt < 20) #ADD RESTRICTING  CONDITIONS HERE
         return ~rejected
     else:
         raise ValueError(f"Unknown telescope: {telescope_key}")
@@ -36,26 +37,6 @@ def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
 def float_prefix(s: str) -> float:
     m = re.match(r"\s*([0-9]*\.?[0-9]+)", s)
     return float(m.group(1)) if m else float("nan")
-
-# def filter_events_for_telescope(events, telescope_key: str, day_of_observation: int):
-#     filtered = []
-#     for ev in events:
-#         if not night_window(ev, day_of_observation):
-#             continue
-#         if telescope_key == "c11":
-#             # ADD MAG CONDITIONS HERE
-#             if not ((ev.mag >= 15.0) and (ev.dur < 1.0)):
-#                 if not ((ev.mag >= 14.5) and (ev.dur < 0.3)):
-#                     filtered.append(ev)
-#         elif telescope_key == "c14":
-#             # ADD MAG CONDITIONS HERE
-#             if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
-#                 filtered.append(ev)
-#         elif telescope_key == "hubble24":
-#             # ADD MAG CONDITIONS HERE
-#             if not ((ev.mag >= 15.5) and (ev.dur < 1.0)):
-#                 filtered.append(ev)
-#     return filtered
 
 def exposure_for_mag(mag: float) -> float:
     inttime = 0.0067
