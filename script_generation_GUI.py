@@ -3,6 +3,7 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 from pathlib import Path
 import script_generation_func
+import inspect
 
 REQUIRED_INPUT_COLS = ["date","ut","durn","star_mag","mag_drop","star_no",
                        "asteroid","alt","az","probability","ra","dec"]
@@ -39,10 +40,13 @@ def mark_close_events(df_slice: pd.DataFrame, time_col="utc_dt", window_sec=240)
 class DualTableApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
+        # screen_width = self.winfo_screenwidth()
+        # screen_height = self.winfo_screenheight()
         self.title("Occultation Script GUI")
-        self.geometry(f"{screen_width}x{screen_height}")
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            self.attributes("-zoomed", True)
 
         self.events_fullpath = ""
         self.events_path = tk.StringVar()
@@ -58,8 +62,8 @@ class DualTableApp(tk.Tk):
         self._build_ui()
 
     def _configure_row_tags(self, tree):
-        tree.tag_configure("close4", background="#fff4cc")
-        tree.tag_configure("highprob",  background="#d4e8d3")
+        tree.tag_configure("close4", background="#edd28c") #change colors as needed! shows up different on different screens
+        tree.tag_configure("highprob",  background="#8eed8c")
 
     def _build_ui(self):
         top = ttk.Frame(self)
@@ -109,6 +113,25 @@ class DualTableApp(tk.Tk):
         self._configure_row_tags(self.good_tree)
         self._configure_row_tags(self.bad_tree)
 
+        self.active_tree = self.good_tree
+
+        def _set_active(tree):
+            self.active_tree = tree
+
+
+        self.good_tree.bind("<Button-1>", lambda e: _set_active(self.good_tree))
+        self.bad_tree.bind("<Button-1>",  lambda e: _set_active(self.bad_tree))
+        self.good_tree.bind("<FocusIn>", lambda e: setattr(self, "active_tree", self.good_tree))
+        self.bad_tree.bind("<FocusIn>",  lambda e: setattr(self, "active_tree", self.bad_tree))
+        self.good_tree.bind("<<TreeviewSelect>>", lambda e: setattr(self, "active_tree", self.good_tree))
+        self.bad_tree.bind("<<TreeviewSelect>>",  lambda e: setattr(self, "active_tree", self.bad_tree))
+
+
+        # space moves between tables; enter moves down
+        for i in (self.good_tree, self.bad_tree):
+            i.bind("<space>", self._on_space)
+            i.bind("<Return>", self._on_enter)
+
         btns = ttk.Frame(mid)
         btns.grid(row=0, column=1, sticky="ns")
         ttk.Button(btns, text="← Move to Accepted", command=self.move_to_accepted).pack(pady=(180, 10))
@@ -118,6 +141,22 @@ class DualTableApp(tk.Tk):
         bottom = ttk.Frame(self)
         bottom.pack(fill="x", padx=10, pady=(0, 10))
         ttk.Button(bottom, text="Generate SCS from Accepted", command=self.on_generate).pack(side="right")
+
+    def _on_space(self, event):
+        tree = event.widget
+        self.active_tree = tree
+        if tree == self.good_tree:
+            self.move_to_rejected()
+        else:
+            self.move_to_accepted()
+        return "break"
+
+    def _on_enter(self, event):
+        tree = event.widget
+        self.active_tree = tree
+        self._move_selection_down(tree)
+        return "break"
+
 
     def _make_tree(self, parent):
         tree = ttk.Treeview(parent, columns=DISPLAY_COLS, show="headings", selectmode="extended")
@@ -134,6 +173,68 @@ class DualTableApp(tk.Tk):
             tree.column(col, width=120, stretch=tk.YES, anchor="center")
 
         return tree
+    def _select_first_event(self, tree: ttk.Treeview):
+        kids = tree.get_children()
+        if not kids:
+            return
+        tree.selection_set(kids[0])
+        tree.focus(kids[0])
+        tree.see(kids[0])
+
+    def _select_next_after_move(self, src_tree, accepted_value: bool):
+        kids_before = list(src_tree.get_children())
+        moved = list(src_tree.selection())
+        if not moved:
+            return
+
+        try:
+            anchor_idx = max(kids_before.index(i) for i in moved if i in kids_before)
+        except ValueError:
+            anchor_idx = 0
+
+        self._set_acceptance(moved, accepted_value)
+
+        kids_after = list(src_tree.get_children())
+        if not kids_after:
+            return
+
+        pick_idx = min(anchor_idx, len(kids_after) - 1)
+        pick = kids_after[pick_idx]
+
+        src_tree.selection_set(pick)
+        src_tree.focus(pick)
+        src_tree.see(pick)
+        src_tree.focus_set()
+
+
+    def _move_selection_down(self, tree: ttk.Treeview):
+        kids = list(tree.get_children())
+        if not kids:
+            return
+
+        sel = list(tree.selection())
+        if not sel:
+            self._select_first_event(tree)
+            return
+
+        try:
+            idxs = [kids.index(i) for i in sel if i in kids]
+        except ValueError:
+            idxs = []
+        if not idxs:
+            self._select_first_event(tree)
+            return
+
+        idx = max(idxs)
+        nxt = idx + 1
+        if nxt >= len(kids):
+            nxt = len(kids) - 1
+
+        pick = kids[nxt]
+        tree.selection_set(pick)
+        tree.focus(pick)
+        tree.see(pick)
+
 
     def pick_events(self):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
@@ -149,10 +250,9 @@ class DualTableApp(tk.Tk):
             return
         self.day_var.set(d)
 
-        # automatic path name
         stem = Path(p).name[:8]
-        self.out_path.set(str(Path(p).with_name(f"{stem}_174_script.scs")))
-
+        script_dir = Path(inspect.getfile(script_generation_func)).resolve().parent
+        self.out_path.set(str(script_dir / f"{stem}_174_script.scs"))
         self.load_events_into_tables()
 
     def pick_pre(self):
@@ -250,12 +350,13 @@ class DualTableApp(tk.Tk):
         self.render_tables()
 
     def move_to_accepted(self):
-        uids = self.bad_tree.selection()
-        self._set_acceptance(uids, True)
+        self.active_tree = self.bad_tree
+        self._select_next_after_move(self.bad_tree, True)
+
 
     def move_to_rejected(self):
-        uids = self.good_tree.selection()
-        self._set_acceptance(uids, False)
+        self.active_tree = self.good_tree
+        self._select_next_after_move(self.good_tree, False)
 
     def on_generate(self):
         if self.df_all is None:
