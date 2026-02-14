@@ -13,6 +13,7 @@ Upload raw events.txt file by clicking on the Upload events.txt button in the to
 If pre and post files are in different locations, use the browse buttons to set their locations. If you want the script to save in a different location, you can set that via the respective browse button as well. Change the telescope type using the radio buttons to change the restrictions applied on the events.
 
 Click on an event and click Move to Accepted/Rejected to move them around. Events in green are prob > 15% and yellow are events that are within 4 minutes of each other. 
+Clicking on an event will autoselect the next one. Use the arrow keys to move the selection up and down, and press space to move them to either rejected or accepted. Pressing enter will move the selection down.
 
 Finally click on Generate SCS from Accepted in the bottom right corner to create a script. 
 
