@@ -58,6 +58,7 @@ class DualTableApp(tk.Tk):
         self.telescope = tk.StringVar(value="c14")
 
         self.df_all = None
+        self._load_prepost_paths()
         self._build_ui()
 
     def _configure_row_tags(self, tree):
@@ -93,6 +94,48 @@ class DualTableApp(tk.Tk):
                 # last resort: just use screen size
                 self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
         self.after(0, _do)
+
+    def _app_dir(self) -> Path:
+        return Path(__file__).resolve().parent
+
+    def _settings_path(self) -> Path:
+        return self._app_dir() / "prepost_paths.txt"
+
+    def _load_prepost_paths(self):
+        settings = self._settings_path()
+        default_pre = "pre174.txt"
+        default_post = "post571.txt"
+
+        if not settings.exists():
+            settings.write_text(f"{default_pre}\n{default_post}\n", encoding="utf-8")
+            self.pre_path.set(str(self._app_dir() / default_pre))
+            self.post_path.set(str(self._app_dir() / default_post))
+            return
+        lines = settings.read_text(encoding="utf-8", errors="replace").splitlines()
+        pre = lines[0].strip() if len(lines) > 0 else default_pre
+        post = lines[1].strip() if len(lines) > 1 else default_post
+
+        pre_path = Path(pre)
+        post_path = Path(post)
+
+        if not pre_path.is_absolute():
+            pre_path = self._app_dir() / pre_path
+        if not post_path.is_absolute():
+            post_path = self._app_dir() / post_path
+
+        self.pre_path.set(str(pre_path))
+        self.post_path.set(str(post_path))
+
+    def _save_prepost_paths(self):
+        settings = self._settings_path()
+        pre = self.pre_path.get().strip()
+        post = self.post_path.get().strip()
+
+        # store absolute paths
+        pre_abs = str(Path(pre).expanduser().resolve()) if pre else ""
+        post_abs = str(Path(post).expanduser().resolve()) if post else ""
+
+        settings.write_text(pre_abs + "\n" + post_abs + "\n", encoding="utf-8")
 
     def _build_ui(self):
         top = ttk.Frame(self)
@@ -288,11 +331,13 @@ class DualTableApp(tk.Tk):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if p:
             self.pre_path.set(p)
+            self._save_prepost_paths()
 
     def pick_post(self):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if p:
             self.post_path.set(p)
+            self._save_prepost_paths()
 
     def pick_out(self):
         p = filedialog.asksaveasfilename(defaultextension=".scs", filetypes=[("SCS files", "*.scs"), ("All files", "*.*")])
