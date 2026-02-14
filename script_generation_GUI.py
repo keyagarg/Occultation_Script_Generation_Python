@@ -4,6 +4,8 @@ import pandas as pd
 from pathlib import Path
 import script_generation_func
 import inspect
+import ctypes
+from ctypes import wintypes
 
 REQUIRED_INPUT_COLS = ["date","ut","durn","star_mag","mag_drop","star_no",
                        "asteroid","alt","az","probability","ra","dec"]
@@ -43,10 +45,7 @@ class DualTableApp(tk.Tk):
         # screen_width = self.winfo_screenwidth()
         # screen_height = self.winfo_screenheight()
         self.title("Occultation Script GUI")
-        try:
-            self.state("zoomed")
-        except tk.TclError:
-            self.attributes("-zoomed", True)
+        self.maximize_keep_taskbar()
 
         self.events_fullpath = ""
         self.events_path = tk.StringVar()
@@ -64,6 +63,36 @@ class DualTableApp(tk.Tk):
     def _configure_row_tags(self, tree):
         tree.tag_configure("close4", background="#edd28c") #change colors as needed! shows up different on different screens
         tree.tag_configure("highprob",  background="#8eed8c")
+    def maximize_keep_taskbar(self):
+        def _do():
+            # 1) Try the normal maximize approaches
+            try:
+                self.state("zoomed")
+                return
+            except Exception:
+                pass
+            try:
+                self.attributes("-zoomed", True)
+                return
+            except Exception:
+                pass
+
+            # 2) Windows fallback: size to "work area" (screen minus taskbar)
+            try:
+                SPI_GETWORKAREA = 0x0030
+                rect = wintypes.RECT()
+                ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
+
+                x = rect.left
+                y = rect.top
+                w = rect.right - rect.left
+                h = rect.bottom - rect.top
+
+                self.geometry(f"{w}x{h}+{x}+{y}")
+            except Exception:
+                # last resort: just use screen size
+                self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
+        self.after(0, _do)
 
     def _build_ui(self):
         top = ttk.Frame(self)
