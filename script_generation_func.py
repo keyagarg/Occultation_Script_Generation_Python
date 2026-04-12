@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 import pandas as pd
 
@@ -29,7 +30,7 @@ def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
         rejected = ((mag >= 15.5) & (dur < 1.0)) | (alt <= 10) #ADD RESTRICTING  CONDITIONS HERE
         return ~rejected
     elif tel == "hubble24":
-        rejected = ((mag >= 16.0) & (dur < 1.0)) | (alt < 20) #ADD RESTRICTING  CONDITIONS HERE
+        rejected = ((mag >= 15.5) & (dur < 0.3)) | ((mag >= 15.7) & (dur < 0.5)) | (alt < 20) #ADD RESTRICTING  CONDITIONS HERE
         return ~rejected
     else:
         raise ValueError(f"Unknown telescope: {telescope_key}")
@@ -91,6 +92,10 @@ class Event:
     stime: float
     lshour: int
     lsmin: int
+
+    st_iso: str
+    mt_iso: str
+    ls_iso: str
 
 def parse_radec_from_end(tokens):
     t = tokens[:]
@@ -154,6 +159,9 @@ def find_asteroid(tokens):
 
     start = j + 1
     return " ".join(tokens[start:alt_i]).strip()
+
+def date_to_iso8601(dt: datetime):
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 def parse_event_line(line: str):
     if not EVENT_ROW.match(line):
@@ -299,7 +307,13 @@ def extract_event(row) -> Event | None:
     inttime = exposure_for_mag(mag)
     if inttime > maxint:
         inttime = maxint
+    st_dt = date_object - timedelta(minutes=8)
+    mt_dt = date_object - timedelta(minutes=2) + timedelta(seconds=30)
+    ls_dt = date_object - timedelta(minutes=1) + timedelta(seconds=30)
 
+    st_iso = date_to_iso8601(st_dt)
+    mt_iso = date_to_iso8601(mt_dt)
+    ls_iso = date_to_iso8601(ls_dt)
     nsamp = int(60 / inttime) if inttime > 0 else 0
 
     return Event(
@@ -310,7 +324,7 @@ def extract_event(row) -> Event | None:
         occulted_star=occulted_star, prob=prob,
         maxint=maxint, inttime=inttime, nsamp=nsamp,
         sttime=sttime, mttime=mttime, lstime=lstime, stime=stime,
-        lshour=lshour, lsmin=lsmin
+        lshour=lshour, lsmin=lsmin, st_iso=st_iso, mt_iso=mt_iso, ls_iso=ls_iso
     )
 
 def night_window_filter(df: pd.DataFrame, day_filter: int) -> pd.Series:
@@ -387,10 +401,11 @@ def generate_scs(events, output_path: str, pre_path: str, post_path: str) -> Non
         out += handle_print("TARGETNAME \"", ev.target, "\"")
         out += handle_print("UNLOCK CONTROLS")
         out += handle_print("MOUNT TRACKING None")
-        if ev.hour > 16:
-            out += handle_print('WAIT UNTIL LATER THAN LOCALTIME "', ev.sttime, '"') #midnight change to be handled here
-        else:
-            out += handle_print('WAIT UNTIL LATER THAN LOCALTIME "', ev.sttime, '"')
+        # if ev.hour > 16:
+        #     out += handle_print('WAIT UNTIL LATER THAN LOCALTIME "', ev.sttime, '"') #midnight change to be handled here
+        # else:
+        #     out += handle_print('WAIT UNTIL LATER THAN LOCALTIME "', ev.sttime, '"')
+        out += handle_print('WAIT UNTIL LATER THAN LOCALTIME "', ev.st_iso, '"')
         out += handle_print("IGNORE ERRORS FROM ONERROR RUN \"\"")
         out += handle_print("MOUNT TRACKING Sidereal")
         out += handle_print("  MOUNT GOTO \"", ev.radec, "\"")
@@ -400,13 +415,15 @@ def generate_scs(events, output_path: str, pre_path: str, post_path: str) -> Non
         if (ev.stime - laststime) * 60 > 20:
             out += handle_print("GOSUB AFOCUS")
         out += handle_print("GOSUB PLATESOLV")
-        out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.mttime, "\"")
+        #out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.mttime, "\"")
+        out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.mt_iso, "\"")
         out += handle_print("GOSUB PLATESOLV")
         out += handle_print("SET RESOLUTION TO 800x600")
         out += handle_print("SET EXPOSURE TO", ev.inttime)
         out += handle_print("DELAY 3")
         out += handle_print("DISPLAY STRETCH AUTO")
-        out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.lstime, "\"")
+        #out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.lstime, "\"")
+        out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.ls_iso, "\"")
         out += handle_print("  CAPTURE 60 SECONDS LIVE FRAMES")
         out += handle_print("SET RESOLUTION TO 1920x1200")
         out += handle_print("SET EXPOSURE TO 0.5")
