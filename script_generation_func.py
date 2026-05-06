@@ -12,6 +12,13 @@ EVENT_ROW = re.compile(r"^\s*\d{4}\s+[A-Za-z]{3}\s+\d{1,2}\b")
 PROB_TOK  = re.compile(r"^\d+%$")
 INT_TOK   = re.compile(r"^-?\d+$")
 
+CAMERA_SETTINGS = {
+    "qhy": {"label": "QHY", "resolution": "1920x1200", "comment_cooler": False},
+    "zwo": {"label": "ZWO", "resolution": "1608x1104", "comment_cooler": True},
+    "playerone": {"label": "PlayerOne", "resolution": "1608x1104", "comment_cooler": False},
+}
+DEFAULT_CAMERA = "qhy"
+
 def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
     mag = df["star_mag"].astype(float)
     alt = df["alt"].astype(float)
@@ -21,7 +28,7 @@ def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
     else:
         dur = df["durn"].astype(float)
 
-    tel = telescope_key.lower().strip()
+    tel = telescope_key.lower().strip().replace("-", "")
 
     if tel == "c11":
         rejected = ((mag >= 15.0) & (dur < 1.0)) | ((mag >= 14.5) & (dur < 0.3)) | (alt <= 10) #ADD RESTRICTING CONDITIONS HERE
@@ -29,7 +36,7 @@ def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
     elif tel == "c14":
         rejected = ((mag >= 15.5) & (dur < 1.0)) | (alt <= 10) #ADD RESTRICTING  CONDITIONS HERE
         return ~rejected
-    elif tel == "hubble24":
+    elif tel in ("hubble", "hubble24"):
         rejected = ((mag >= 15.5) & (dur < 0.3)) | ((mag >= 15.7) & (dur < 0.5)) | (alt < 20) #ADD RESTRICTING  CONDITIONS HERE
         return ~rejected
     else:
@@ -96,6 +103,7 @@ class Event:
     st_iso: str
     mt_iso: str
     ls_iso: str
+    capture_secs: int
 
 def parse_radec_from_end(tokens):
     t = tokens[:]
@@ -309,7 +317,13 @@ def extract_event(row) -> Event | None:
         inttime = maxint
     st_dt = date_object - timedelta(minutes=8)
     mt_dt = date_object - timedelta(minutes=2) + timedelta(seconds=30)
-    ls_dt = date_object - timedelta(minutes=1) + timedelta(seconds=45)
+
+    capture_pad = 30 if dur > 5.0 else 15
+    capture_secs = capture_pad * 2
+    ls_dt = date_object - timedelta(seconds=capture_pad)
+    lshour = ls_dt.hour
+    lsmin = ls_dt.minute
+    lstime = ls_dt.strftime("%H:%M:%S")
 
     st_iso = date_to_iso8601(st_dt)
     mt_iso = date_to_iso8601(mt_dt)
@@ -324,7 +338,7 @@ def extract_event(row) -> Event | None:
         occulted_star=occulted_star, prob=prob,
         maxint=maxint, inttime=inttime, nsamp=nsamp,
         sttime=sttime, mttime=mttime, lstime=lstime, stime=stime,
-        lshour=lshour, lsmin=lsmin, st_iso=st_iso, mt_iso=mt_iso, ls_iso=ls_iso
+        lshour=lshour, lsmin=lsmin, st_iso=st_iso, mt_iso=mt_iso, ls_iso=ls_iso, capture_secs=capture_secs
     )
 
 def night_window_filter(df: pd.DataFrame, day_filter: int) -> pd.Series:
@@ -368,7 +382,78 @@ def get_astrometry_string(radec: str) -> str:
     dec_d_abs = dec_d.lstrip("+-")
     return f"#Astrometry coordinates: {ra_h}h{ra_m}m{ra_s}s {sign}{dec_d_abs}d{dec_m}m{dec_s}s\n"
 
-def generate_scs(events, output_path: str, pre_path: str, post_path: str) -> None:
+def _split_line_ending(line: str):
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    return line, ""
+
+def set_cooler_lines(text: str, comment: bool) -> str:
+    lines = text.splitlines(True)
+    out = []
+    for line in lines:
+        body, ending = _split_line_ending(line)
+        stripped = body.lstrip()
+        indent = body[:len(body) - len(stripped)]
+
+        active_cooler = stripped.upper().startswith("SET COOLER TARGET TO")
+        commented_cooler = False
+        uncommented = stripped
+        if stripped.startswith("#"):
+            uncommented = stripped[1:].lstrip()
+            commented_cooler = uncommented.upper().startswith("SET COOLER TARGET TO")
+
+        if active_cooler or commented_cooler:
+            if comment:
+                out.append(f"{indent}# {uncommented}{ending}")
+            else:
+                out.append(f"{indent}{uncommented}{ending}")
+        else:
+            out.append(line)
+    return "".join(out)
+
+def set_template_resolution(text: str, resolution: str) -> str:
+    lines = text.splitlines(True)
+    out = []
+    for line in lines:
+        body, ending = _split_line_ending(line)
+        stripped = body.lstrip()
+        if stripped.upper().startswith("SET RESOLUTION TO"):
+            indent = body[:len(body) - len(stripped)]
+            out.append(f"{indent}SET RESOLUTION TO {resolution}{ending}")
+        else:
+            out.append(line)
+    return "".join(out)
+
+def get_camera_settings(camera_key: str) -> dict:
+    cam = camera_key.lower().strip()
+    if cam not in CAMERA_SETTINGS:
+        raise ValueError(f"Unknown camera: {camera_key}")
+    return CAMERA_SETTINGS[cam]
+
+def apply_camera_to_template(text: str, camera_key: str) -> str:
+    camera = get_camera_settings(camera_key)
+    text = set_template_resolution(text, camera["resolution"])
+    text = set_cooler_lines(text, camera["comment_cooler"])
+    return text
+
+def update_prepost_files_for_camera(pre_path: str, post_path: str, camera_key: str) -> None:
+    pre_file = Path(pre_path)
+    post_file = Path(post_path)
+
+    header = pre_file.read_text(encoding="utf-8", errors="replace")
+    footer = post_file.read_text(encoding="utf-8", errors="replace")
+
+    header = apply_camera_to_template(header, camera_key)
+    footer = apply_camera_to_template(footer, camera_key)
+
+    pre_file.write_text(header, encoding="utf-8")
+    post_file.write_text(footer, encoding="utf-8")
+
+def generate_scs(events, output_path: str, pre_path: str, post_path: str, camera_key: str = DEFAULT_CAMERA) -> None:
+    update_prepost_files_for_camera(pre_path, post_path, camera_key)
+
     with open(pre_path, "r", encoding="utf-8", errors="replace", newline="") as f:
         header = f.read()
     if not header.endswith("\n"):
@@ -376,6 +461,8 @@ def generate_scs(events, output_path: str, pre_path: str, post_path: str) -> Non
     with open(post_path, "r", encoding="utf-8", errors="replace", newline="") as f:
         footer = f.read()
 
+    camera = get_camera_settings(camera_key)
+    resolution = camera["resolution"]
     events.sort(key=lambda e: e.date_object)
 
     out = header
@@ -418,14 +505,14 @@ def generate_scs(events, output_path: str, pre_path: str, post_path: str) -> Non
         #out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.mttime, "\"")
         out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.mt_iso, "\"")
         out += handle_print("GOSUB PLATESOLV")
-        #out += handle_print("SET RESOLUTION TO 800x600")
+        out += handle_print("SET RESOLUTION TO", resolution)
         out += handle_print("SET EXPOSURE TO", ev.inttime)
         out += handle_print("DELAY 3")
         out += handle_print("DISPLAY STRETCH AUTO")
         #out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.lstime, "\"")
         out += handle_print("WAIT UNTIL LATER THAN LOCALTIME \"", ev.ls_iso, "\"")
-        out += handle_print("  CAPTURE 30 SECONDS LIVE FRAMES")
-        out += handle_print("SET RESOLUTION TO 1920x1200")
+        out += handle_print("  CAPTURE", ev.capture_secs, "SECONDS LIVE FRAMES")
+        out += handle_print("SET RESOLUTION TO", resolution)
         out += handle_print("SET EXPOSURE TO 0.5")
         out += handle_print("DELAY 3")
         out += handle_print("DISPLAY STRETCH AUTO")

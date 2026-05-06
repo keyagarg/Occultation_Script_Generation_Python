@@ -49,13 +49,14 @@ class DualTableApp(tk.Tk):
 
         self.events_fullpath = ""
         self.events_path = tk.StringVar()
-        self.pre_path = tk.StringVar(value="pre174.txt")
-        self.post_path = tk.StringVar(value="post571.txt")
+        self.pre_path = tk.StringVar(value="pre_path_general.txt")
+        self.post_path = tk.StringVar(value="post_path_general.txt")
         self.out_path = tk.StringVar()
         self.day_var = tk.IntVar(value=1)
         self.day_text = tk.StringVar(value="Day: —")
 
-        self.telescope = tk.StringVar(value="c14")
+        self.telescope = tk.StringVar(value="Hubble")
+        self.camera = tk.StringVar(value="zwo")
 
         self.df_all = None
         self._load_prepost_paths()
@@ -101,27 +102,46 @@ class DualTableApp(tk.Tk):
     def _settings_path(self) -> Path:
         return self._app_dir() / "prepost_paths.txt"
 
+    def _clean_path_text(self, value: str) -> str:
+        return value.strip().strip('"').strip("'")
+
+    def _resolve_path(self, value: str) -> Path:
+        cleaned = self._clean_path_text(value)
+        path = Path(cleaned).expanduser()
+        if not path.is_absolute():
+            path = self._app_dir() / path
+        return path.resolve(strict=False)
+
+    def _valid_txt_file(self, value: str) -> bool:
+        path = self._resolve_path(value)
+        return path.is_file() and path.suffix.lower() == ".txt"
+
+    def _show_prepost_error(self, pre_valid: bool, post_valid: bool):
+        if not pre_valid and not post_valid:
+            msg = "Invalid pre and post files."
+        elif not pre_valid:
+            msg = "Invalid pre file."
+        else:
+            msg = "Invalid post file."
+        messagebox.showerror("Invalid file", msg)
+
     def _load_prepost_paths(self):
         settings = self._settings_path()
-        default_pre = "pre174.txt"
-        default_post = "post571.txt"
+        default_pre = "pre_path_general.txt"
+        default_post = "post_path_general.txt"
 
         if not settings.exists():
             settings.write_text(f"{default_pre}\n{default_post}\n", encoding="utf-8")
             self.pre_path.set(str(self._app_dir() / default_pre))
             self.post_path.set(str(self._app_dir() / default_post))
             return
+
         lines = settings.read_text(encoding="utf-8", errors="replace").splitlines()
         pre = lines[0].strip() if len(lines) > 0 else default_pre
         post = lines[1].strip() if len(lines) > 1 else default_post
 
-        pre_path = Path(pre)
-        post_path = Path(post)
-
-        if not pre_path.is_absolute():
-            pre_path = self._app_dir() / pre_path
-        if not post_path.is_absolute():
-            post_path = self._app_dir() / post_path
+        pre_path = self._resolve_path(pre)
+        post_path = self._resolve_path(post)
 
         self.pre_path.set(str(pre_path))
         self.post_path.set(str(post_path))
@@ -132,10 +152,36 @@ class DualTableApp(tk.Tk):
         post = self.post_path.get().strip()
 
         # store absolute paths
-        pre_abs = str(Path(pre).expanduser().resolve()) if pre else ""
-        post_abs = str(Path(post).expanduser().resolve()) if post else ""
+        pre_abs = str(self._resolve_path(pre)) if pre else ""
+        post_abs = str(self._resolve_path(post)) if post else ""
 
         settings.write_text(pre_abs + "\n" + post_abs + "\n", encoding="utf-8")
+
+    def _camera_name_for_filename(self) -> str:
+        camera_names = {"qhy": "QHY", "zwo": "ZWO", "playerone": "PlayerOne"}
+        camera_key = self.camera.get().lower().strip()
+        return camera_names.get(camera_key, self.camera.get().strip())
+
+    def _telescope_name_for_filename(self) -> str:
+        telescope_names = {
+            "hubble": "Hubble",
+            "hubble-24": "Hubble",
+            "c14": "C14",
+            "c-14": "C14",
+            "c11": "C11",
+            "c-11": "C11",
+        }
+        telescope_key = self.telescope.get().lower().strip()
+        return telescope_names.get(telescope_key, self.telescope.get().replace("-", "").strip())
+
+    def _refresh_output_path(self):
+        if not self.events_fullpath:
+            return
+
+        date_part = Path(self.events_fullpath).name[:8]
+        script_dir = Path(inspect.getfile(script_generation_func)).resolve().parent
+        filename = f"{date_part}_{self._camera_name_for_filename()}_{self._telescope_name_for_filename()}_script.scs"
+        self.out_path.set(str(script_dir / filename))
 
     def _build_ui(self):
         top = ttk.Frame(self)
@@ -150,7 +196,7 @@ class DualTableApp(tk.Tk):
         ttk.Button(top, text="Browse", command=self.pick_pre).grid(row=1, column=2, padx=(2, 0))
 
         ttk.Label(top, text="post path:").grid(row=2, column=0, sticky="e")
-        ttk.Entry(top, textvariable=self.post_path, width=40).grid(row=2, column=1, sticky="we",padx=(8, 2))
+        ttk.Entry(top, textvariable=self.post_path, width=40).grid(row=2, column=1, sticky="we", padx=(8, 2))
         ttk.Button(top, text="Browse", command=self.pick_post).grid(row=2, column=2, padx=(2, 0))
 
         ttk.Label(top, text="output .scs path:").grid(row=3, column=0, sticky="e")
@@ -161,10 +207,19 @@ class DualTableApp(tk.Tk):
         tel_frame = ttk.LabelFrame(top, text="Telescope")
         tel_frame.grid(row=0, column=3, rowspan=4, padx=12, pady=2, sticky="ns")
 
-        for i, tel in enumerate(["c11", "c14", "hubble24"]): #CHANGE AS TELESCOPES ARE ADDED
+        for i, tel in enumerate(["Hubble", "C14", "C11"]): #CHANGE AS TELESCOPES ARE ADDED
             ttk.Radiobutton(
                 tel_frame, text=tel, value=tel, variable=self.telescope,
                 command=self.on_telescope_changed
+            ).grid(row=i, column=0, sticky="w", padx=8, pady=4)
+
+        camera_frame = ttk.LabelFrame(top, text="Camera")
+        camera_frame.grid(row=0, column=4, rowspan=4, padx=12, pady=2, sticky="ns")
+
+        for i, (label, value) in enumerate([("QHY", "qhy"), ("ZWO", "zwo"), ("PlayerOne", "playerone")]):
+            ttk.Radiobutton(
+                camera_frame, text=label, value=value, variable=self.camera,
+                command=self.on_camera_changed
             ).grid(row=i, column=0, sticky="w", padx=8, pady=4)
 
         mid = ttk.Frame(self)
@@ -308,6 +363,35 @@ class DualTableApp(tk.Tk):
         tree.see(pick)
 
 
+    def _apply_camera_to_prepost_files(self, show_errors=False):
+        pre = self.pre_path.get().strip()
+        post = self.post_path.get().strip()
+        if not pre or not post:
+            return
+
+        pre_path = self._resolve_path(pre)
+        post_path = self._resolve_path(post)
+
+        pre_valid = self._valid_txt_file(str(pre_path))
+        post_valid = self._valid_txt_file(str(post_path))
+        if not pre_valid or not post_valid:
+            if show_errors:
+                self._show_prepost_error(pre_valid, post_valid)
+            return
+
+        self.pre_path.set(str(pre_path))
+        self.post_path.set(str(post_path))
+
+        try:
+            script_generation_func.update_prepost_files_for_camera(str(pre_path), str(post_path), self.camera.get())
+        except Exception as e:
+            if show_errors:
+                messagebox.showerror("Camera template update error", str(e))
+
+    def on_camera_changed(self):
+        self._apply_camera_to_prepost_files(show_errors=False)
+        self._refresh_output_path()
+
     def pick_events(self):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if not p:
@@ -322,22 +406,22 @@ class DualTableApp(tk.Tk):
             return
         self.day_var.set(d)
 
-        stem = Path(p).name[:8]
-        script_dir = Path(inspect.getfile(script_generation_func)).resolve().parent
-        self.out_path.set(str(script_dir / f"{stem}_174_script.scs"))
+        self._refresh_output_path()
         self.load_events_into_tables()
 
     def pick_pre(self):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if p:
-            self.pre_path.set(p)
+            self.pre_path.set(str(self._resolve_path(p)))
             self._save_prepost_paths()
+            self._apply_camera_to_prepost_files(show_errors=False)
 
     def pick_post(self):
         p = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if p:
-            self.post_path.set(p)
+            self.post_path.set(str(self._resolve_path(p)))
             self._save_prepost_paths()
+            self._apply_camera_to_prepost_files(show_errors=False)
 
     def pick_out(self):
         p = filedialog.asksaveasfilename(defaultextension=".scs", filetypes=[("SCS files", "*.scs"), ("All files", "*.*")])
@@ -375,6 +459,7 @@ class DualTableApp(tk.Tk):
         self.render_tables()
 
     def on_telescope_changed(self):
+        self._refresh_output_path()
         if self.df_all is None:
             return
 
@@ -436,9 +521,16 @@ class DualTableApp(tk.Tk):
         if self.df_all is None:
             messagebox.showerror("No data", "Upload an events.txt file first.")
             return
-        if not Path(self.pre_path.get()).exists() or not Path(self.post_path.get()).exists():
-            messagebox.showerror("Missing pre/post", "Select valid pre and post files.")
+        pre_path = self._resolve_path(self.pre_path.get())
+        post_path = self._resolve_path(self.post_path.get())
+        pre_valid = self._valid_txt_file(str(pre_path))
+        post_valid = self._valid_txt_file(str(post_path))
+        if not pre_valid or not post_valid:
+            self._show_prepost_error(pre_valid, post_valid)
             return
+        self.pre_path.set(str(pre_path))
+        self.post_path.set(str(post_path))
+        self._apply_camera_to_prepost_files(show_errors=True)
         if not self.out_path.get().strip():
             messagebox.showerror("Missing output", "Select an output .scs path.")
             return
@@ -454,7 +546,7 @@ class DualTableApp(tk.Tk):
         records = df_good[NEEDED].to_dict("records")
         try:
             events = [script_generation_func.extract_event(rec) for rec in records]  # <-- adapt event_from_row to accept dict
-            script_generation_func.generate_scs(events, self.out_path.get(), self.pre_path.get(), self.post_path.get())
+            script_generation_func.generate_scs(events, self.out_path.get(), str(pre_path), str(post_path), self.camera.get())
         except Exception as e:
             messagebox.showerror("Generate error", str(e))
             return
