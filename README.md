@@ -10,7 +10,7 @@ This works with command prompt and linux terminals. You will need script_generat
 ## Navigation
 Upload raw events.txt file by clicking on the Upload events.txt button in the top left corner. This file **must** be named according to YYYYMMDD_events.txt as it infers the day from the file name. The file is created from the events page of Occult4
 
-If pre and post files are in different locations, use the browse buttons to set their locations. If you want the script to save in a different location, you can set that via the respective browse button as well. By default, the script will save in the same folder as the python files.
+Set the general pre and post paths via the buttons in the top left corner. These only need to be set once, and the software will keep updating the files there. If you want the script to save in a different location, you can set that via the respective browse button as well. By default, the script will save in the same folder as the python files.
 
 Change the telescope type using the radio buttons to change the restrictions applied on the events.
 
@@ -20,11 +20,19 @@ Clicking on an event will autoselect the next one. Use the arrow keys to move th
 Finally click on Generate SCS from Accepted in the bottom right corner to create a script. 
 
 ## Configuration
-To change the mag and duration conditions or the telescope names, edit the telescope_accept_mask in script_generation_func.py. As of 20260215, it can handle 3 types of telescopes. If changing telescope names, you will also need to edit the list next to the comment #CHANGE AS TELESCOPES ARE ADDED in script_generation_GUI.py
+To change the mag and duration conditions or the telescope names, edit the telescope_accept_mask in script_generation_func.py. As of 20260506, it can handle 3 types of telescopes and three cameras. If changing telescope/camera names, you will also need to edit the lists that are commented in script_generation_GUI.py and script_generation_func.py. 
 
 To change the background colors of the close/good events, edit the color hex code in _configure_row_tags in script_generation_GUI.py
 
-# CLI Interface (OLD)
+## Specifications
+The program is designed to take 30 second captures on events that are less than 5 seconds, and one minute captures for those that are longer. 
+
+The changes made based on cameras are as follows: 
+- **ZWO ASI432MM** -> Capture area: 1608x1104   Cooling: Uncooled
+- **QHY174** -> Capture area: 1920x1200   Cooling: Cooled
+- **PlayerOne Apollo_M MAX** -> Capture area: 1608x1104   Cooling: Cooled
+
+# CLI Interface (OBSOLETE)
 ## How to run
 python script_generation_CLI.py [event file] [telescope] [**--day** day of observation] [**--pre** header file] [**--post** footer file] [**--out** output path]
 
@@ -55,8 +63,6 @@ Optional. This is the footer file that contains the end of observing sequence. D
 
 Optional. Can use -o or --out. This sets the path for the output scs file. Default will save as YYYYMMDD_174_script.scs and will save in the same location as the program. To set a different path, enter .../YYYYMMDD_174_script.scs
 
-# Notes
-- Need to handle UTC date change errors from SharpCap
 
 
 
