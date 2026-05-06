@@ -158,7 +158,7 @@ class DualTableApp(tk.Tk):
         settings.write_text(pre_abs + "\n" + post_abs + "\n", encoding="utf-8")
 
     def _camera_name_for_filename(self) -> str:
-        camera_names = {"qhy": "QHY", "zwo": "ZWO", "playerone": "PlayerOne"}
+        camera_names = {"qhy": "QHY", "zwo": "ZWO", "playerone": "PlayerOne"} #CHANGE HERE TO CHANGE CAMERA LIST
         camera_key = self.camera.get().lower().strip()
         return camera_names.get(camera_key, self.camera.get().strip())
 
@@ -170,7 +170,7 @@ class DualTableApp(tk.Tk):
             "c-14": "C14",
             "c11": "C11",
             "c-11": "C11",
-        }
+        } #CHANGE HERE TO UPDATE TELESCOPES
         telescope_key = self.telescope.get().lower().strip()
         return telescope_names.get(telescope_key, self.telescope.get().replace("-", "").strip())
 
@@ -216,7 +216,7 @@ class DualTableApp(tk.Tk):
         camera_frame = ttk.LabelFrame(top, text="Camera")
         camera_frame.grid(row=0, column=4, rowspan=4, padx=12, pady=2, sticky="ns")
 
-        for i, (label, value) in enumerate([("QHY", "qhy"), ("ZWO", "zwo"), ("PlayerOne", "playerone")]):
+        for i, (label, value) in enumerate([("QHY", "qhy"), ("ZWO", "zwo"), ("PlayerOne", "playerone")]): #CHANGE HERE TO UPDATE CAMERAS
             ttk.Radiobutton(
                 camera_frame, text=label, value=value, variable=self.camera,
                 command=self.on_camera_changed

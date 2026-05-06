@@ -18,6 +18,7 @@ CAMERA_SETTINGS = {
     "playerone": {"label": "PlayerOne", "resolution": "1608x1104", "comment_cooler": False},
 }
 DEFAULT_CAMERA = "qhy"
+#CHANGE HERE TO ADD DIFFERENT CAMERAS
 
 def telescope_accept_mask(df: pd.DataFrame, telescope_key: str) -> pd.Series:
     mag = df["star_mag"].astype(float)
