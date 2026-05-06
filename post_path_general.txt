@@ -1,0 +1,10 @@
+#
+# ****************STOP HERE*************
+    MOUNT TRACKING None
+    DELAY 1
+    SET COOLER TARGET TO 15
+    DELAY 60 
+    MOUNT PARK
+    END UNLOCK
+#
+END SEQUENCE
