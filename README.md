@@ -10,7 +10,7 @@ This works with command prompt and linux terminals. You will need script_generat
 ## Navigation
 Upload raw events.txt file by clicking on the Upload events.txt button in the top left corner. This file **must** be named according to YYYYMMDD_events.txt as it infers the day from the file name. The file is created from the events page of Occult4
 
-Set the general pre and post paths via the buttons in the top left corner. These only need to be set once, and the software will keep updating the files there. If you want the script to save in a different location, you can set that via the respective browse button as well. By default, the script will save in the same folder as the python files.
+Set the pre_path_general.txt and post_path_general.txt paths via the buttons in the top left corner. These only need to be set once, and the software will keep updating the files there. If you want the script to save in a different location, you can set that via the respective browse button as well. By default, the script will save in the same folder as the python files.
 
 Change the telescope type using the radio buttons to change the restrictions applied on the events.
 
