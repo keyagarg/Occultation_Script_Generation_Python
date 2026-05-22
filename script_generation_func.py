@@ -273,7 +273,7 @@ def extract_event(row) -> Event | None:
     alt = int(row["alt"]) if pd.notna(row["alt"]) else 0
     az  = int(row["az"])  if pd.notna(row["az"]) else 0
     altaz = f"{alt:>3} {az:>3}"
-    target = str(row["asteroid"]) if pd.notna(row["asteroid"]) else ""
+    target = str(row["asteroid"]).replace(" ", "_") if pd.notna(row["asteroid"]) else ""
     asteroid_id = target.split()[0] if target else ""
     occulted_star = str(row["star_no"])
     prob = float(row["probability"])
@@ -296,7 +296,7 @@ def extract_event(row) -> Event | None:
         lshour -= 1
     if lshour < 0:
         lshour += 24
-    lstime = f"{lshour:02d}:{lsmin:02d}:{lssec:02d}"
+    # lstime = f"{lshour:02d}:{lsmin:02d}:{lssec:02d}"
     if mtsec >= 60:
         mtsec -= 60
         mtmin += 1
